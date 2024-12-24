@@ -13,6 +13,11 @@
 #include "operations.h"
 #include "io.h"
 #include "pthread.h"
+#include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <semaphore.h>
+#include "../common/semaphore.h"
 
 struct SharedData {
   DIR* dir;
@@ -27,6 +32,8 @@ size_t active_backups = 0;     // Number of active backups
 size_t max_backups;            // Maximum allowed simultaneous backups
 size_t max_threads;            // Maximum allowed simultaneous threads
 char* jobs_directory = NULL;
+
+
 
 int filter_job_files(const struct dirent* entry) {
     const char* dot = strrchr(entry->d_name, '.');
@@ -232,7 +239,7 @@ static void* get_file(void* arguments) {
 }
 
 
-static void dispatch_threads(DIR* dir) {
+static void dispatch_threads(DIR* dir, char* fifo_registo) {
   pthread_t* threads = malloc(max_threads * sizeof(pthread_t));
 
   if (threads == NULL) {
@@ -253,6 +260,36 @@ static void dispatch_threads(DIR* dir) {
   }
 
   // ler do FIFO de registo
+  int fd = open(fifo_registo, O_RDONLY);
+  if (fd == -1) {
+    fprintf(stderr, "Failed to open register FIFO\n");
+    return;
+  }
+
+  fprintf(stdout, "Opened register FIFO: %s\n", fifo_registo);
+
+  char buffer[PIPE_BUF];
+  int count = 0;
+  while (1) {
+    sem_wait(&register_fifo_sem);
+    ssize_t bytes_read = read(fd, buffer, PIPE_BUF);
+    sem_post(&register_fifo_sem);
+    if (bytes_read == -1) {
+      fprintf(stderr, "Failed to read from register FIFO\n");
+      break;
+    }
+
+    if (bytes_read == 0) {
+      break;
+    }
+
+    buffer[bytes_read] = '\0';
+    fprintf(stdout, "Received: '%s' - %i\n", buffer, ++count);
+  }
+
+  fprintf(stdout, "Closing register FIFO\n");
+  close(fd);
+
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {
@@ -272,12 +309,13 @@ static void dispatch_threads(DIR* dir) {
 
 
 int main(int argc, char** argv) {
-  if (argc < 4) {
+  if (argc < 5) {
     write_str(STDERR_FILENO, "Usage: ");
     write_str(STDERR_FILENO, argv[0]);
     write_str(STDERR_FILENO, " <jobs_dir>");
 		write_str(STDERR_FILENO, " <max_threads>");
-		write_str(STDERR_FILENO, " <max_backups> \n");
+		write_str(STDERR_FILENO, " <max_backups>");
+    write_str(STDERR_FILENO, " <nome_do_FIFO_de_registo>\n");
     return 1;
   }
 
@@ -308,6 +346,31 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
+  char *base_path = "/home/ubuntu/tmp/";
+  char fifo_registo[1000]; 
+  strcpy(fifo_registo, base_path);
+  strcat(fifo_registo, argv[4]);
+  fifo_registo[strlen(argv[4]) + strlen(base_path)] = '\0';
+
+  sem_init(&register_fifo_sem, 0, 1);
+
+
+
+  /* remove pipe if it exists */
+  if (unlink(fifo_registo) != 0 && errno != ENOENT) {
+      perror("[ERR]: unlink(%s) failed");
+      exit(EXIT_FAILURE);
+  }
+
+  /* create pipe */
+  if (mkfifo(fifo_registo, 0640) != 0) {
+      perror("[ERR]: mkfifo failed");
+      exit(EXIT_FAILURE);
+  }
+
+  fprintf(stdout, "FIFO created: '%s' -- sleeping for 10 seconds\n", fifo_registo);
+  sleep(10);
+
   if (kvs_init()) {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");
     return 1;
@@ -319,7 +382,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  dispatch_threads(dir);
+  dispatch_threads(dir, fifo_registo);
 
   if (closedir(dir) == -1) {
     fprintf(stderr, "Failed to close directory\n");
