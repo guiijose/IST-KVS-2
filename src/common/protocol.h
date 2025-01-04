@@ -7,6 +7,8 @@
 enum {
   OP_CODE_CONNECT = 1,
   // TODO mais opcodes para cada operacao
+  OP_CODE_DISCONNECT = 2,
+  OP_CODE_SUCCESSFUL_CONNNECTION = 3,
 };
 
 #endif  // COMMON_PROTOCOL_H

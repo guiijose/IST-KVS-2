@@ -18,14 +18,15 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
   notif_pipe_path = notif_pipe_path;
   notif_pipe = notif_pipe;
 
-  char *base_path = "/home/ubuntu/tmp/";
+  char *base_path = "/tmp/";
   char fifo_registo[1000]; 
   strcpy(fifo_registo, base_path);
   strcat(fifo_registo, server_pipe_path);
   fifo_registo[strlen(server_pipe_path) + strlen(base_path)] = '\0';
 
+  // Wait for the server to create the FIFO
   while (access(fifo_registo, F_OK) == -1) {
-    fprintf(stderr, "FIFO doesn't exist yet\n");
+    fprintf(stderr, "FIFO doesn't exist yet: %s\n", fifo_registo);
     sleep(1);
   }
 
@@ -40,10 +41,32 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
   }
 
   const char* message = "connect client\n";
-  sem_wait(&register_fifo_sem);
   write(fifo_fd, message, strlen(message));
-  sem_post(&register_fifo_sem);
+
+  sleep(1);
   close(fifo_fd);
+
+
+  int response_fd = open(resp_pipe_path, O_RDONLY);
+
+  if (response_fd == -1) {
+    fprintf(stderr, "Failed to open response fifo: '%s'\n", resp_pipe_path);
+    return 1;
+  }
+
+  char response[256];
+  read(response_fd, response, 256);
+
+  switch (response[0]) {
+  {
+  case OP_CODE_CONNECT:
+    /* code */
+    break;
+  
+  default:
+    break;
+  }
+
 
 
   return 0;

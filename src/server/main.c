@@ -269,11 +269,8 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   fprintf(stdout, "Opened register FIFO: %s\n", fifo_registo);
 
   char buffer[PIPE_BUF];
-  int count = 0;
   while (1) {
-    sem_wait(&register_fifo_sem);
     ssize_t bytes_read = read(fd, buffer, PIPE_BUF);
-    sem_post(&register_fifo_sem);
     if (bytes_read == -1) {
       fprintf(stderr, "Failed to read from register FIFO\n");
       break;
@@ -283,11 +280,8 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
       break;
     }
 
-    buffer[bytes_read] = '\0';
-    fprintf(stdout, "Received: '%s' - %i\n", buffer, ++count);
+    write(STDOUT_FILENO, buffer, bytes_read);
   }
-
-  fprintf(stdout, "Closing register FIFO\n");
   close(fd);
 
 
@@ -346,7 +340,7 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
-  char *base_path = "/home/ubuntu/tmp/";
+  char *base_path = "/tmp/";
   char fifo_registo[1000]; 
   strcpy(fifo_registo, base_path);
   strcat(fifo_registo, argv[4]);
