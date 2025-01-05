@@ -7,10 +7,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <semaphore.h>
-#include "src/common/semaphore.h"
-#include "src/common/protocol.h"
+#include "../common/semaphore.h"
+#include "../common/protocol.h"
 
-int kvs_connect(char   const   *req_pipe_path,   char   const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path) {
+int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path) {
 
   // Wait for the server to create the FIFO
   while (access(server_pipe_path, F_OK) == -1) {
@@ -27,12 +27,14 @@ int kvs_connect(char   const   *req_pipe_path,   char   const *resp_pipe_path, c
     fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
     return 1;
   }
-
+  sem_wait(&register_fifo_sem);
+  fprintf(stdout, "Client locked the semaphore\n");
   char message = OP_CODE_CONNECT;
   write(fifo_fd, &message, 1);
   write(fifo_fd, req_pipe_path, 40);
   write(fifo_fd, resp_pipe_path, 40);
   write(fifo_fd, notifications_pipe_path, 40);
+  sem_post(&register_fifo_sem);
 
   sleep(1);
   close(fifo_fd);

@@ -276,6 +276,8 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   char resp_pipe_path[40];
   char notif_pipe_path[40];
 
+  sem_wait(&register_fifo_sem);
+  fprintf(stdout, "Server locked the semaphore\n");
   char response;
   read(fd, &response, 1);
   switch (response) {
@@ -283,6 +285,8 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
       read(fd, req_pipe_path, 40);
       read(fd, resp_pipe_path, 40);
       read(fd, notif_pipe_path, 40);
+      sem_post(&register_fifo_sem);
+      fprintf(stdout, "Server unlocked the semaphore\n");
 
       req_pipe_path[strlen(req_pipe_path)] = '\0';
       resp_pipe_path[strlen(resp_pipe_path)] = '\0';
@@ -291,12 +295,13 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
       break;
 
     default:
+      sem_post(&register_fifo_sem);
+      fprintf(stderr, "Server unlocked the semaphore\n");
       fprintf(stderr, "Failed to connect to server\n");
       return;
   }
 
   close(fd);
-
   sem_wait(&clients_connected_sem);
   int resp_fd = open(resp_pipe_path, O_WRONLY);
   if (resp_fd == -1) {
@@ -314,7 +319,6 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   close(resp_fd);
-
   sem_post(&clients_connected_sem);
 
 
