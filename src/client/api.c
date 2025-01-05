@@ -4,49 +4,40 @@
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <semaphore.h>
-#include "../common/semaphore.h"
+#include "src/common/semaphore.h"
+#include "src/common/protocol.h"
 
-int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
-                char const* notif_pipe_path, int* notif_pipe) {
-  // create pipes and connect
-  // use the argument variables so the program compiles
-  req_pipe_path = req_pipe_path;
-  resp_pipe_path = resp_pipe_path;
-  server_pipe_path = server_pipe_path;
-  notif_pipe_path = notif_pipe_path;
-  notif_pipe = notif_pipe;
-
-  char *base_path = "/tmp/";
-  char fifo_registo[1000]; 
-  strcpy(fifo_registo, base_path);
-  strcat(fifo_registo, server_pipe_path);
-  fifo_registo[strlen(server_pipe_path) + strlen(base_path)] = '\0';
+int kvs_connect(char   const   *req_pipe_path,   char   const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path) {
 
   // Wait for the server to create the FIFO
-  while (access(fifo_registo, F_OK) == -1) {
-    fprintf(stderr, "FIFO doesn't exist yet: %s\n", fifo_registo);
+  while (access(server_pipe_path, F_OK) == -1) {
+    fprintf(stderr, "FIFO doesn't exist yet: %s\n", server_pipe_path);
     sleep(1);
   }
 
-  fprintf(stdout, "FIFO exists: '%s'\n", fifo_registo);
+  fprintf(stdout, "FIFO exists: '%s'\n", server_pipe_path);
   sleep(1);
 
-  int fifo_fd = open(fifo_registo, O_WRONLY);
+  int fifo_fd = open(server_pipe_path, O_WRONLY);
 
   if (fifo_fd == -1) {
-    fprintf(stderr, "Failed to open fifo: '%s'\n", fifo_registo);
+    fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
     return 1;
   }
 
-  const char* message = "connect client\n";
-  write(fifo_fd, message, strlen(message));
+  char message = OP_CODE_CONNECT;
+  write(fifo_fd, &message, 1);
+  write(fifo_fd, req_pipe_path, 40);
+  write(fifo_fd, resp_pipe_path, 40);
+  write(fifo_fd, notifications_pipe_path, 40);
 
   sleep(1);
   close(fifo_fd);
 
-
+  // Open response FIFO to read server response
   int response_fd = open(resp_pipe_path, O_RDONLY);
 
   if (response_fd == -1) {
@@ -54,21 +45,28 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     return 1;
   }
 
-  char response[256];
-  read(response_fd, response, 256);
+  char response;
+  char result;
+  read(response_fd, &response, 1);
+  read(response_fd, &result, 1);
 
-  switch (response[0]) {
-  {
-  case OP_CODE_CONNECT:
-    /* code */
-    break;
-  
-  default:
-    break;
+  switch (response) {
+    case OP_CODE_CONNECT:
+      /* code */
+      if (result == 0) {
+        fprintf(stdout, "\033[0;32mClient connected\033[0m\n");
+        return 0;
+      } else {
+        fprintf(stderr, "\033[0;31mFailed to connect to server\033[0m\n");
+        return 1;
+      }
+      return 0;
+
+    default:
+      fprintf(stderr, "\033[0;31mFailed to connect to server\033[0m\n");
+      return 1;
   }
-
-
-
+  
   return 0;
 }
  
@@ -89,4 +87,29 @@ int kvs_unsubscribe(const char* key) {
   return 0;
 }
 
+int create_pipes(char const* req_pipe_path, char const* resp_pipe_path, char const* notifications_pipe_path) {
+  // Remove existing pipes if they exist
+  unlink(req_pipe_path);
+  unlink(resp_pipe_path);
+  unlink(notifications_pipe_path);
+
+  // Create each pipe and return 0 if all were created successfully
+  if (mkfifo(req_pipe_path, 0666) == -1) {
+    perror("Failed to create request pipe");
+    return 1;
+  }
+
+  if (mkfifo(resp_pipe_path, 0666) == -1) {
+    perror("Failed to create response pipe");
+    return 1;
+  }
+
+  if (mkfifo(notifications_pipe_path, 0666) == -1) {
+    perror("Failed to create notifications pipe");
+    return 1;
+  }
+
+  return 0;
+}
+                
 

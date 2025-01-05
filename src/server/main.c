@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <semaphore.h>
 #include "../common/semaphore.h"
+#include "../common/protocol.h"
+#include "../common/constants.h"
 
 struct SharedData {
   DIR* dir;
@@ -32,6 +34,8 @@ size_t active_backups = 0;     // Number of active backups
 size_t max_backups;            // Maximum allowed simultaneous backups
 size_t max_threads;            // Maximum allowed simultaneous threads
 char* jobs_directory = NULL;
+
+sem_t clients_connected_sem;
 
 
 
@@ -268,21 +272,50 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
 
   fprintf(stdout, "Opened register FIFO: %s\n", fifo_registo);
 
-  char buffer[PIPE_BUF];
-  while (1) {
-    ssize_t bytes_read = read(fd, buffer, PIPE_BUF);
-    if (bytes_read == -1) {
-      fprintf(stderr, "Failed to read from register FIFO\n");
-      break;
-    }
+  char req_pipe_path[40];
+  char resp_pipe_path[40];
+  char notif_pipe_path[40];
 
-    if (bytes_read == 0) {
-      break;
-    }
+  char response;
+  read(fd, &response, 1);
+  switch (response) {
+    case OP_CODE_CONNECT:
+      read(fd, req_pipe_path, 40);
+      read(fd, resp_pipe_path, 40);
+      read(fd, notif_pipe_path, 40);
 
-    write(STDOUT_FILENO, buffer, bytes_read);
+      req_pipe_path[strlen(req_pipe_path)] = '\0';
+      resp_pipe_path[strlen(resp_pipe_path)] = '\0';
+      notif_pipe_path[strlen(notif_pipe_path)] = '\0';
+      fprintf(stdout, "Received connection request: %s %s %s\n", req_pipe_path, resp_pipe_path, notif_pipe_path);
+      break;
+
+    default:
+      fprintf(stderr, "Failed to connect to server\n");
+      return;
   }
+
   close(fd);
+
+  sem_wait(&clients_connected_sem);
+  int resp_fd = open(resp_pipe_path, O_WRONLY);
+  if (resp_fd == -1) {
+    fprintf(stderr, "Failed to open response FIFO\n");
+    return;
+  }
+
+  char connect_response = OP_CODE_CONNECT;
+  if (write(resp_fd, &connect_response, 1) != 1) {
+    fprintf(stderr, "Failed to write connect response to response FIFO\n");
+  }
+  char result = 0;
+  if (write(resp_fd, &result, 1) != 1) {
+    fprintf(stderr, "Failed to write connect result to response FIFO\n");
+  }
+
+  close(resp_fd);
+
+  sem_post(&clients_connected_sem);
 
 
   for (unsigned int i = 0; i < max_threads; i++) {
@@ -340,15 +373,10 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
-  char *base_path = "/tmp/";
-  char fifo_registo[1000]; 
-  strcpy(fifo_registo, base_path);
-  strcat(fifo_registo, argv[4]);
-  fifo_registo[strlen(argv[4]) + strlen(base_path)] = '\0';
+  char *fifo_registo = argv[4];
 
   sem_init(&register_fifo_sem, 0, 1);
-
-
+  sem_init(&clients_connected_sem, 0, MAX_SESSION_COUNT);
 
   /* remove pipe if it exists */
   if (unlink(fifo_registo) != 0 && errno != ENOENT) {

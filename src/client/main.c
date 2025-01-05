@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 
   char req_pipe_path[256] = "/tmp/req";
   char resp_pipe_path[256] = "/tmp/resp";
-  char notif_pipe_path[256] = "/tmp/notif";
+  char notifications_pipe_path[256] = "/tmp/notif";
 
   char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
   unsigned int delay_ms;
@@ -28,10 +28,16 @@ int main(int argc, char* argv[]) {
 
   strncat(req_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
-  strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
+  strncat(notifications_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
   // TODO open pipes
-  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, NULL) != 0) {
+
+  if (create_pipes(req_pipe_path, resp_pipe_path, notifications_pipe_path) != 0) {
+    fprintf(stderr, "Failed to create pipes\n");
+    return 1;
+  }
+
+  if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2]) != 0) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
