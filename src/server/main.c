@@ -37,17 +37,40 @@ size_t max_backups;            // Maximum allowed simultaneous backups
 size_t max_threads;            // Maximum allowed simultaneous threads
 char* jobs_directory = NULL;
 
+
 sem_t clients_connected_sem;
 
-typedef struct Client {
-  int id;
-  char* req_pipe_path;
-  char* resp_pipe_path;
-  char* notif_pipe_path;
-} Client;
+void* request_thread_function(void* arg) {
+  Client* client = (Client*)arg;
+  int fd = client->req_fd;
+  // Add your function logic here
+  char message[42];
+  read_all(fd, message, 42, NULL);
+  char key[41];
+  switch (message[0])
+  {
+  case OP_CODE_SUBSCRIBE:
+    /* code */
+    strncpy(key, message + 1, 41);
+    if (subscribe(client, key) == 1) {
+      fprintf(stderr, "Failed to subscribe to key: %s\n", key);
+    }
+    break;
+  
+  case OP_CODE_UNSUBSCRIBE:
+    /* code */
+    break;
+  
+  case OP_CODE_DISCONNECT:
+    /* code */
+    break;
 
-Client* clients[MAX_SESSION_COUNT];
-
+  default:
+    fprintf(stderr, "Unknown request from from client: %c\n", message[0]);
+    break;
+  }
+  return NULL;
+}
 
 int filter_job_files(const struct dirent* entry) {
     const char* dot = strrchr(entry->d_name, '.');
@@ -259,9 +282,18 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     fprintf(stderr, "Failed to allocate memory for client\n");
     return 0;
   }
-  client->req_pipe_path = req_pipe_path;
-  client->resp_pipe_path = resp_pipe_path;
-  client->notif_pipe_path = notif_pipe_path;
+
+  client->id = req_pipe_path[strlen(req_pipe_path) - 1];
+  fprintf(stdout, "Client connected with id: %d\n", client->id);
+  client->req_fd = open(req_pipe_path, O_RDONLY);
+  client->resp_fd = open(resp_pipe_path, O_WRONLY);
+  client->notif_fd = open(notif_pipe_path, O_WRONLY);
+
+  pthread_t* request_thread = malloc(sizeof(pthread_t));
+  if (pthread_create(request_thread, NULL, request_thread_function, (void*)&client) != 0) {
+    fprintf(stderr, "Failed to create request thread\n");
+    return 1;
+  }
 
   for (int i = 0; i < MAX_SESSION_COUNT; i++) {
     if (clients[i] == NULL) {
@@ -321,7 +353,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   while (1) {
-    // Read from the FIFO
+    // Read from the register FIFO
     char response[121];
     read_all(fd, response, 121, NULL);
     if (response[0] != OP_CODE_CONNECT) {
@@ -331,7 +363,16 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
     process_message(response, response + 41, response + 81);
   }
 
-  close(fd);
+  close(fd); // Close the register FIFO
+
+  pthread_t* request_thread = malloc(sizeof(pthread_t));
+  
+
+  if (register_thread == NULL) {
+    fprintf(stderr, "Failed to allocate memory for register thread\n");
+    return;
+  }
+
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {

@@ -3,6 +3,16 @@
 
 #include <stddef.h>
 #include "constants.h"
+#include "../common/constants.h"
+
+typedef struct Client {
+    int id;
+    int req_fd;
+    int resp_fd;
+    int notif_fd;
+} Client;
+
+Client* clients[MAX_SESSION_COUNT];
 
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, 1 otherwise.

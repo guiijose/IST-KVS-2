@@ -11,15 +11,14 @@
 #include "src/common/io.h"
 #include "api.h"
 
+// Mutex lock to synchronize who writes/reads to stdout
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+
 
 void *notifications_thread_function(void *arg) {
-  char *notifications_pipe_path = (char *)arg;
-  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
+  int *notifications_fd = (int*)arg;
 
-  if (notifications_fd == -1) {
-    fprintf(stderr, "Failed to open notifications pipe\n");
-    return NULL;
-  }
 
   return NULL;
 
@@ -55,9 +54,30 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // pthread_t notifications_thread;
+  int request_fd = open(req_pipe_path, O_WRONLY);
 
-  // pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)notifications_pipe_path);
+  if (request_fd == -1) {
+    fprintf(stderr, "Failed to open request pipe\n");
+    return 1;
+  }
+
+  int response_fd = open(resp_pipe_path, O_RDONLY);
+
+  if (response_fd == -1) {
+    fprintf(stderr, "Failed to open response pipe\n");
+    return 1;
+  }
+
+  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
+
+  if (notifications_fd == -1) {
+    fprintf(stderr, "Failed to open notifications pipe\n");
+    return 1;
+  }
+
+  pthread_t notifications_thread;
+  pthread_mutex_init(&lock, NULL);
+  pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)&notifications_fd);
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
@@ -120,4 +140,6 @@ int main(int argc, char* argv[]) {
         break;
     }
   }
+
+  // pthread_join(notifications_thread, NULL);
 }

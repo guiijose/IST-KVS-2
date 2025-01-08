@@ -18,13 +18,13 @@ int kvs_disconnect(void);
 /// @param key Key to be subscribed
 /// @return 1 if the key was subscribed successfully (key existing), 0 otherwise.
 
-int kvs_subscribe(const char* key);
+int kvs_subscribe(const char* key, const int req_fd, const int resp_fd);
 
 /// Remove a subscription for a key
 /// @param key Key to be unsubscribed
 /// @return 0 if the key was unsubscribed successfully  (subscription existed and was removed), 1 otherwise.
 
-int kvs_unsubscribe(const char* key);
+int kvs_unsubscribe(const char* key, const int req_fd, const int resp_fd);
 
 int create_pipes(char const* req_pipe_path, char const* resp_pipe_path,char const* notifications_pipe_path);
  

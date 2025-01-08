@@ -1,14 +1,22 @@
 #ifndef KEY_VALUE_STORE_H
 #define KEY_VALUE_STORE_H
+#include "operations.h"
 #define TABLE_SIZE 26
 
 #include <stddef.h>
 #include <pthread.h>
 
+
+typedef struct ClientNode {
+    Client *client;
+    struct ClientNode *next;
+} ClientNode;
+
 typedef struct KeyNode {
     char *key;
     char *value;
     struct KeyNode *next;
+    ClientNode *client; // Linked list with all clients subscribed to this key
 } KeyNode;
 
 typedef struct HashTable {
