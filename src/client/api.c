@@ -7,8 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <semaphore.h>
-#include "../common/semaphore.h"
-#include "../common/protocol.h"
+#include "src/common/protocol.h"
+#include "src/common/io.h"
 
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path) {
 
@@ -28,19 +28,23 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
     return 1;
   }
-  fprintf(stdout, "About to lock the semaphore\n");
-  // sem_wait(&register_fifo_sem);
-  fprintf(stdout, "Client locked the semaphore\n");
+
+  // Send connect message to server with empty chars as \0
   char message = OP_CODE_CONNECT;
-  write(fifo_fd, &message, 1);
-  write(fifo_fd, req_pipe_path, 40);
-  write(fifo_fd, resp_pipe_path, 40);
-  write(fifo_fd, notifications_pipe_path, 40);
-  // sem_post(&register_fifo_sem);
-  fprintf(stdout, "Client unlocked the semaphore\n");
+  char buffer[121];
+  memset(buffer, 0, 121);
+  buffer[0] = message;
+  strcpy(buffer + 1, req_pipe_path);
+  strcpy(buffer + 41, resp_pipe_path);
+  strcpy(buffer + 81, notifications_pipe_path);
+  
+  if (write_all(fifo_fd, &buffer, 121) == -1) {
+    fprintf(stderr, "Failed to write to FIFO\n");
+    return 1;
+  }
 
   // Open response FIFO to read server response
-  int response_fd = open(resp_pipe_path, O_RDONLY);
+  int response_fd = open(resp_pipe_path, O_RDONLY | O_NONBLOCK);
 
   if (response_fd == -1) {
     fprintf(stderr, "Failed to open response fifo: '%s'\n", resp_pipe_path);

@@ -20,6 +20,7 @@
 #include "../common/semaphore.h"
 #include "../common/protocol.h"
 #include "../common/constants.h"
+#include "../common/io.h"
 
 struct SharedData {
   DIR* dir;
@@ -250,11 +251,13 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     fprintf(stderr, "Failed to open response FIFO\n");
     return 0;
   }
-  char connect_message[3];
+  char connect_message[2];
   connect_message[0] = OP_CODE_CONNECT;
   connect_message[1] = '0';
-  connect_message[2] = '\0';
-  write_str(resp_fd, connect_message);
+  if (write_all(resp_fd, connect_message, 2) == -1) {
+    fprintf(stderr, "Failed to write to response FIFO\n");
+    return 1;
+  }
   close(resp_fd);
   return 0;
 }
@@ -292,7 +295,6 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   sleep(1);
 
   while (1) {
-    // sem_wait(&register_fifo_sem);
     // Read from the FIFO
     char response;
     ssize_t bytes_read = read(fd, &response, 1);
@@ -306,14 +308,17 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
         read(fd, req_pipe_path, 40);
         read(fd, resp_pipe_path, 40);
         read(fd, notif_pipe_path, 40);
+
+        fprintf(stdout, "Request pipe path: %s\n", req_pipe_path);
+        fprintf(stdout, "Response pipe path: %s\n", resp_pipe_path);
+        fprintf(stdout, "Notification pipe path: %s\n", notif_pipe_path);
         process_message(req_pipe_path, resp_pipe_path, notif_pipe_path);
     } else if (bytes_read == -1) {
         perror("Failed to read from FIFO");
         sleep(1);
     }
 
-    // Unlock the semaphore
-    // sem_post(&register_fifo_sem);  
+
   }
 
   close(fd);
