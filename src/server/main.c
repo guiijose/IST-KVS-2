@@ -242,6 +242,23 @@ static void* get_file(void* arguments) {
   pthread_exit(NULL);
 }
 
+int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_path) {
+  // Processes the message and returns 1 if while should break
+  int resp_fd = open(resp_pipe_path, O_WRONLY);
+
+  if (resp_fd == -1) {
+    fprintf(stderr, "Failed to open response FIFO\n");
+    return 0;
+  }
+  char connect_message[3];
+  connect_message[0] = OP_CODE_CONNECT;
+  connect_message[1] = '0';
+  connect_message[2] = '\0';
+  write_str(resp_fd, connect_message);
+  close(resp_fd);
+  return 0;
+}
+
 
 static void dispatch_threads(DIR* dir, char* fifo_registo) {
   pthread_t* threads = malloc(max_threads * sizeof(pthread_t));
@@ -264,7 +281,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   // ler do FIFO de registo
-  int fd = open(fifo_registo, O_RDONLY);
+  int fd = open(fifo_registo, O_RDONLY | O_NONBLOCK);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
@@ -272,55 +289,34 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
 
   fprintf(stdout, "Opened register FIFO: %s\n", fifo_registo);
 
-  char req_pipe_path[40];
-  char resp_pipe_path[40];
-  char notif_pipe_path[40];
+  sleep(1);
 
-  sem_wait(&register_fifo_sem);
-  fprintf(stdout, "Server locked the semaphore\n");
-  char response;
-  read(fd, &response, 1);
-  switch (response) {
-    case OP_CODE_CONNECT:
-      read(fd, req_pipe_path, 40);
-      read(fd, resp_pipe_path, 40);
-      read(fd, notif_pipe_path, 40);
-      sem_post(&register_fifo_sem);
-      fprintf(stdout, "Server unlocked the semaphore\n");
+  while (1) {
+    // sem_wait(&register_fifo_sem);
+    // Read from the FIFO
+    char response;
+    ssize_t bytes_read = read(fd, &response, 1);
+    fprintf(stdout, "Read response done\n");
+    if (bytes_read > 0 && response == OP_CODE_CONNECT) {
 
-      req_pipe_path[strlen(req_pipe_path)] = '\0';
-      resp_pipe_path[strlen(resp_pipe_path)] = '\0';
-      notif_pipe_path[strlen(notif_pipe_path)] = '\0';
-      fprintf(stdout, "Received connection request: %s %s %s\n", req_pipe_path, resp_pipe_path, notif_pipe_path);
-      break;
+        char req_pipe_path[40];
+        char resp_pipe_path[40];
+        char notif_pipe_path[40];
 
-    default:
-      sem_post(&register_fifo_sem);
-      fprintf(stderr, "Server unlocked the semaphore\n");
-      fprintf(stderr, "Failed to connect to server\n");
-      return;
+        read(fd, req_pipe_path, 40);
+        read(fd, resp_pipe_path, 40);
+        read(fd, notif_pipe_path, 40);
+        process_message(req_pipe_path, resp_pipe_path, notif_pipe_path);
+    } else if (bytes_read == -1) {
+        perror("Failed to read from FIFO");
+        sleep(1);
+    }
+
+    // Unlock the semaphore
+    // sem_post(&register_fifo_sem);  
   }
 
   close(fd);
-  sem_wait(&clients_connected_sem);
-  int resp_fd = open(resp_pipe_path, O_WRONLY);
-  if (resp_fd == -1) {
-    fprintf(stderr, "Failed to open response FIFO\n");
-    return;
-  }
-
-  char connect_response = OP_CODE_CONNECT;
-  if (write(resp_fd, &connect_response, 1) != 1) {
-    fprintf(stderr, "Failed to write connect response to response FIFO\n");
-  }
-  char result = 0;
-  if (write(resp_fd, &result, 1) != 1) {
-    fprintf(stderr, "Failed to write connect result to response FIFO\n");
-  }
-
-  close(resp_fd);
-  sem_post(&clients_connected_sem);
-
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {

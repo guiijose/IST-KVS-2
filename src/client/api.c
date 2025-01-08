@@ -22,22 +22,22 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   sleep(1);
 
   int fifo_fd = open(server_pipe_path, O_WRONLY);
+  fprintf(stdout, "Opened FIFO: '%s'\n", server_pipe_path);
 
   if (fifo_fd == -1) {
     fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
     return 1;
   }
-  sem_wait(&register_fifo_sem);
+  fprintf(stdout, "About to lock the semaphore\n");
+  // sem_wait(&register_fifo_sem);
   fprintf(stdout, "Client locked the semaphore\n");
   char message = OP_CODE_CONNECT;
   write(fifo_fd, &message, 1);
   write(fifo_fd, req_pipe_path, 40);
   write(fifo_fd, resp_pipe_path, 40);
   write(fifo_fd, notifications_pipe_path, 40);
-  sem_post(&register_fifo_sem);
-
-  sleep(1);
-  close(fifo_fd);
+  // sem_post(&register_fifo_sem);
+  fprintf(stdout, "Client unlocked the semaphore\n");
 
   // Open response FIFO to read server response
   int response_fd = open(resp_pipe_path, O_RDONLY);
@@ -47,6 +47,29 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     return 1;
   }
 
+
+  while (1) {
+    char resp_message;
+    char result;
+    ssize_t bytes_read = read(response_fd, &resp_message, 1);
+    if (bytes_read > 0) {
+      switch (resp_message) {
+        case OP_CODE_CONNECT:
+          read(response_fd, &result, 1);
+          if (result == '0') {
+            fprintf(stdout, "\033[0;32mClient connected\033[0m\n");
+            return 0;
+          } else {
+            fprintf(stderr, "\033[0;31mFailed to connect to server\033[0m\n");
+            return 1;
+          }
+          break;
+        
+        default:
+          break;
+      }
+    }
+  }
   char response;
   char result;
   read(response_fd, &response, 1);
