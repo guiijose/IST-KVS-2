@@ -244,6 +244,8 @@ static void* get_file(void* arguments) {
 }
 
 int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_path) {
+  req_pipe_path = req_pipe_path;
+  notif_pipe_path = notif_pipe_path;
   // Processes the message and returns 1 if while should break
   int resp_fd = open(resp_pipe_path, O_WRONLY);
 
@@ -251,9 +253,13 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     fprintf(stderr, "Failed to open response FIFO\n");
     return 0;
   }
+
+  // Concatenate the message and send it to the client
+
   char connect_message[2];
   connect_message[0] = OP_CODE_CONNECT;
   connect_message[1] = '0';
+
   if (write_all(resp_fd, connect_message, 2) == -1) {
     fprintf(stderr, "Failed to write to response FIFO\n");
     return 1;
@@ -284,15 +290,11 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   // ler do FIFO de registo
-  int fd = open(fifo_registo, O_RDONLY | O_NONBLOCK);
+  int fd = open(fifo_registo, O_RDONLY);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
   }
-
-  fprintf(stdout, "Opened register FIFO: %s\n", fifo_registo);
-
-  sleep(1);
 
   while (1) {
     // Read from the FIFO
@@ -378,9 +380,6 @@ int main(int argc, char** argv) {
       perror("[ERR]: mkfifo failed");
       exit(EXIT_FAILURE);
   }
-
-  fprintf(stdout, "FIFO created: '%s' -- sleeping for 10 seconds\n", fifo_registo);
-  sleep(10);
 
   if (kvs_init()) {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");

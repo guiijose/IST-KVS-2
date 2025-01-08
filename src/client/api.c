@@ -18,11 +18,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     sleep(1);
   }
 
-  fprintf(stdout, "FIFO exists: '%s'\n", server_pipe_path);
-  sleep(1);
 
   int fifo_fd = open(server_pipe_path, O_WRONLY);
-  fprintf(stdout, "Opened FIFO: '%s'\n", server_pipe_path);
 
   if (fifo_fd == -1) {
     fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
@@ -37,7 +34,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   strcpy(buffer + 1, req_pipe_path);
   strcpy(buffer + 41, resp_pipe_path);
   strcpy(buffer + 81, notifications_pipe_path);
-  
+
   if (write_all(fifo_fd, &buffer, 121) == -1) {
     fprintf(stderr, "Failed to write to FIFO\n");
     return 1;
@@ -61,10 +58,10 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
         case OP_CODE_CONNECT:
           read(response_fd, &result, 1);
           if (result == '0') {
-            fprintf(stdout, "\033[0;32mClient connected\033[0m\n");
+            fprintf(stdout, "0\n");
             return 0;
           } else {
-            fprintf(stderr, "\033[0;31mFailed to connect to server\033[0m\n");
+            fprintf(stderr, "%i\n", result);
             return 1;
           }
           break;
