@@ -296,29 +296,13 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
 
   while (1) {
     // Read from the FIFO
-    char response;
-    ssize_t bytes_read = read(fd, &response, 1);
-    fprintf(stdout, "Read response done\n");
-    if (bytes_read > 0 && response == OP_CODE_CONNECT) {
-
-        char req_pipe_path[40];
-        char resp_pipe_path[40];
-        char notif_pipe_path[40];
-
-        read(fd, req_pipe_path, 40);
-        read(fd, resp_pipe_path, 40);
-        read(fd, notif_pipe_path, 40);
-
-        fprintf(stdout, "Request pipe path: %s\n", req_pipe_path);
-        fprintf(stdout, "Response pipe path: %s\n", resp_pipe_path);
-        fprintf(stdout, "Notification pipe path: %s\n", notif_pipe_path);
-        process_message(req_pipe_path, resp_pipe_path, notif_pipe_path);
-    } else if (bytes_read == -1) {
-        perror("Failed to read from FIFO");
-        sleep(1);
+    char response[121];
+    read_all(fd, response, 121, NULL);
+    if (response[0] != OP_CODE_CONNECT) {
+      continue;
     }
 
-
+    process_message(response, response + 41, response + 81);
   }
 
   close(fd);
