@@ -28,6 +28,7 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
+
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -38,6 +39,14 @@ char* jobs_directory = NULL;
 
 sem_t clients_connected_sem;
 
+typedef struct Client {
+  int id;
+  char* req_pipe_path;
+  char* resp_pipe_path;
+  char* notif_pipe_path;
+} Client;
+
+Client* clients[MAX_SESSION_COUNT];
 
 
 int filter_job_files(const struct dirent* entry) {
@@ -244,8 +253,23 @@ static void* get_file(void* arguments) {
 }
 
 int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_path) {
-  req_pipe_path = req_pipe_path;
-  notif_pipe_path = notif_pipe_path;
+  Client* client = malloc(sizeof(Client));
+
+  if (client == NULL) {
+    fprintf(stderr, "Failed to allocate memory for client\n");
+    return 0;
+  }
+  client->req_pipe_path = req_pipe_path;
+  client->resp_pipe_path = resp_pipe_path;
+  client->notif_pipe_path = notif_pipe_path;
+
+  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+    if (clients[i] == NULL) {
+      clients[i] = client;
+      break;
+    }
+  }
+  
   // Processes the message and returns 1 if while should break
   int resp_fd = open(resp_pipe_path, O_WRONLY);
 

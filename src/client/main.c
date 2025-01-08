@@ -12,6 +12,19 @@
 #include "api.h"
 
 
+void *notifications_thread_function(void *arg) {
+  char *notifications_pipe_path = (char *)arg;
+  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
+
+  if (notifications_fd == -1) {
+    fprintf(stderr, "Failed to open notifications pipe\n");
+    return NULL;
+  }
+
+  return NULL;
+
+}
+
 int main(int argc, char* argv[]) {
   if (argc < 3) {
     fprintf(stderr, "Usage: %s <client_unique_id> <register_pipe_path>\n", argv[0]);
@@ -41,6 +54,10 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
+
+  // pthread_t notifications_thread;
+
+  // pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)notifications_pipe_path);
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {

@@ -57,16 +57,14 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
       switch (resp_message) {
         case OP_CODE_CONNECT:
           read(response_fd, &result, 1);
-          if (result == '0') {
-            fprintf(stdout, "0\n");
-            return 0;
-          } else {
-            fprintf(stderr, "%i\n", result);
-            return 1;
-          }
+
+          fprintf(stdout, "Server returned %c for operation: connect.\n", result);
+
+          return (result == '0') ? 0 : 1;
           break;
         
         default:
+          fprintf(stderr, "Unknown response from server: %c\n", resp_message);
           break;
       }
     }
