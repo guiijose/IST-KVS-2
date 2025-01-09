@@ -8,7 +8,7 @@
 
 
 typedef struct ClientNode {
-    Client *client;
+    struct Client *client;
     struct ClientNode *next;
 } ClientNode;
 
@@ -16,7 +16,7 @@ typedef struct KeyNode {
     char *key;
     char *value;
     struct KeyNode *next;
-    ClientNode *client; // Linked list with all clients subscribed to this key
+    ClientNode *headClients; // Linked list with all clients subscribed to this key
 } KeyNode;
 
 typedef struct HashTable {
@@ -52,6 +52,8 @@ int delete_pair(HashTable *ht, const char *key);
 /// Frees the hashtable.
 /// @param ht Hash table to be deleted.
 void free_table(HashTable *ht);
+
+int notify_clients(KeyNode* keyNode, char *message);
 
 
 #endif  // KVS_H

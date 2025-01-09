@@ -70,4 +70,11 @@ void set_n_current_backups(int _n_current_backups);
 // @return n_current_backups
 int get_n_current_backups();
 
+int subscribe(Client* client, const char* key);
+
+int unsubscribe(Client* client, const char* key);
+
+int disconnect(Client* client);
+
+
 #endif  // KVS_OPERATIONS_H

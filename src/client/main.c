@@ -6,10 +6,11 @@
 #include <unistd.h>
 
 #include "parser.h"
-#include "src/client/api.h"
-#include "src/common/constants.h"
-#include "src/common/io.h"
+#include "../client/api.h"
+#include "../common/constants.h"
+#include "../common/io.h"
 #include "api.h"
+#include "../common/protocol.h"
 
 // Mutex lock to synchronize who writes/reads to stdout
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -19,6 +20,15 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 void *notifications_thread_function(void *arg) {
   int *notifications_fd = (int*)arg;
 
+  while (1) {
+    char message[42];
+    read_all(*notifications_fd, message, 42, NULL);
+
+    pthread_mutex_lock(&lock);
+    fprintf(stdout, "Key: %s, value: %s\n", message, message + 41);
+    printf("\n");
+    pthread_mutex_unlock(&lock);
+  }
 
   return NULL;
 
@@ -49,40 +59,25 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2]) != 0) {
+  //fprintf(stdout, "Pipes created\n");
+
+
+  int fds[4];
+
+
+  //fprintf(stdout, "About to call connect to server\n");
+  if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2], fds) != 0) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
-
-  int request_fd = open(req_pipe_path, O_WRONLY);
-
-  if (request_fd == -1) {
-    fprintf(stderr, "Failed to open request pipe\n");
-    return 1;
-  }
-
-  int response_fd = open(resp_pipe_path, O_RDONLY);
-
-  if (response_fd == -1) {
-    fprintf(stderr, "Failed to open response pipe\n");
-    return 1;
-  }
-
-  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
-
-  if (notifications_fd == -1) {
-    fprintf(stderr, "Failed to open notifications pipe\n");
-    return 1;
-  }
-
   pthread_t notifications_thread;
   pthread_mutex_init(&lock, NULL);
-  pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)&notifications_fd);
+  pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)&fds[3]);
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
-        if (kvs_disconnect() != 0) {
+        if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
@@ -97,10 +92,9 @@ int main(int argc, char* argv[]) {
           continue;
         }
          
-        if (kvs_subscribe(keys[0])) {
+        if (kvs_subscribe(keys[0],fds[2], fds[1])) {
             fprintf(stderr, "Command subscribe failed\n");
         }
-
         break;
 
       case CMD_UNSUBSCRIBE:
@@ -110,7 +104,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
          
-        if (kvs_unsubscribe(keys[0])) {
+        if (kvs_unsubscribe(keys[0], fds[2], fds[1])) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 

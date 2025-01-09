@@ -1,6 +1,6 @@
 #include "api.h"
-#include "src/common/constants.h"
-#include "src/common/protocol.h"
+#include "../common/constants.h"
+#include "../common/protocol.h"
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -10,21 +10,21 @@
 #include "../common/protocol.h"
 #include "../common/io.h"
 
-int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path) {
-
+int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path, char const *server_pipe_path, int *fds) {
   // Wait for the server to create the FIFO
   while (access(server_pipe_path, F_OK) == -1) {
     fprintf(stderr, "FIFO doesn't exist yet: %s\n", server_pipe_path);
     sleep(1);
   }
 
-
   int fifo_fd = open(server_pipe_path, O_WRONLY);
 
   if (fifo_fd == -1) {
-    fprintf(stderr, "Failed to open fifo: '%s'\n", server_pipe_path);
+    fprintf(stderr, "Failed to open resigister pipe\n");
     return 1;
   }
+
+  fds[0] = fifo_fd;
 
   // Send connect message to server with empty chars as \0
   char message = OP_CODE_CONNECT;
@@ -41,14 +41,31 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   }
 
   // Open response FIFO to read server response
-  int response_fd = open(resp_pipe_path, O_RDONLY | O_NONBLOCK);
-
+  int response_fd = open(resp_pipe_path, O_RDONLY);
   if (response_fd == -1) {
-    fprintf(stderr, "Failed to open response fifo: '%s'\n", resp_pipe_path);
+    fprintf(stderr, "Failed to open response pipe\n");
     return 1;
   }
 
+  //fprintf(stdout, "Request path: '%s'\n", req_pipe_path);
+  int request_fd = open(req_pipe_path, O_WRONLY);
+  //fprintf(stdout, "Request fd: %d\n", request_fd);
+  if (request_fd == -1) {
+    fprintf(stderr, "Failed to open request pipe\n");
+    return 1;
+  }
 
+  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
+
+  if (notifications_fd == -1) {
+    fprintf(stderr, "Failed to open notifications pipe\n");
+    return 1;
+  }
+
+  fds[1] = response_fd;
+  fds[2] = request_fd;
+  fds[3] = notifications_fd;
+  
   while (1) {
     char resp_message[2];
     read_all(response_fd, resp_message, 2, NULL);
@@ -64,8 +81,31 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   return 0;
 }
  
-int kvs_disconnect(void) {
+int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path,  int *fds) {
   // close pipes and unlink pipe files
+  
+  for (int i = 1; i < 4; i++) {
+    if (close(fds[i]) == -1) {
+      perror("Failed to close pipe");
+      return 1;
+    }
+  }
+
+  if (unlink(req_pipe_path) == -1) {
+    perror("Failed to unlink request pipe");
+    return 1;
+  }
+
+  if (unlink(resp_pipe_path) == -1) {
+    perror("Failed to unlink response pipe");
+    return 1;
+  }
+
+  if (unlink(notifications_pipe_path) == -1) {
+    perror("Failed to unlink notifications pipe");
+    return 1;
+  }
+
   return 0;
 }
 

@@ -10,6 +10,8 @@
 #include "io.h"
 #include "kvs.h"
 #include "operations.h"
+#include "../common/io.h"
+#include "../common/protocol.h"
 
 static struct HashTable *kvs_table = NULL;
 
@@ -177,3 +179,140 @@ void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
   nanosleep(&delay, NULL);
 }
+
+int subscribe(Client* client, const char* key) {
+  char message[2];
+  message[0] = OP_CODE_SUBSCRIBE;
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 1;
+  }
+
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+  
+  int index = hash(key);
+  KeyNode *keyNode = kvs_table->table[index];
+
+  while (keyNode != NULL) {
+    if (strcmp(keyNode->key, key) == 0) {
+      ClientNode *clientNode = malloc(sizeof(ClientNode));
+      if (clientNode == NULL) {
+        fprintf(stderr, "Failed to allocate memory for client node\n");
+        pthread_rwlock_unlock(&kvs_table->tablelock);
+        message[1] = '1'; 
+        write_all(client->notif_fd, message, 2);
+        return 1;
+      }
+
+      while (1) {
+        if (clientNode->client == NULL) {
+          clientNode->client = client;
+          clientNode->next = keyNode->headClients;
+          keyNode->headClients = clientNode;
+          pthread_rwlock_unlock(&kvs_table->tablelock);
+          message[1] = '0';
+          write_all(client->resp_fd, message, 2);
+          return 0;
+        } 
+        else {
+          clientNode = clientNode->next;
+        }
+      }
+    }
+    keyNode = keyNode->next;
+  }
+  message[1] = '1';
+  write_all(client->resp_fd, message, 2);
+  fprintf(stderr, "Key not found: %s\n", key);
+  
+  pthread_rwlock_unlock(&kvs_table->tablelock);
+  return 1;
+}
+
+int unsubscribe(Client* client, const char* key) {
+  char message[2];
+  message[0] = OP_CODE_UNSUBSCRIBE;
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 1;
+  }
+
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+  
+  int index = hash(key);
+  KeyNode *keyNode = kvs_table->table[index];
+
+  while (keyNode != NULL) {
+    if (strcmp(keyNode->key, key) == 0) {
+      ClientNode *clientNode = keyNode->headClients;
+      ClientNode *prev = NULL;
+      while (clientNode != NULL) {
+        if (clientNode->client == client) {
+          if (prev == NULL) {
+            keyNode->headClients = clientNode->next;
+          } else {
+            prev->next = clientNode->next;
+          }
+          free(clientNode);
+          pthread_rwlock_unlock(&kvs_table->tablelock);
+          message[1] = '0';
+          write_all(client->resp_fd, message, 2);
+          return 0;
+        }
+        prev = clientNode;
+        clientNode = clientNode->next;
+      }
+    }
+    keyNode = keyNode->next;
+  }
+  message[1] = '1';
+  write_all(client->resp_fd, message, 2);
+  fprintf(stderr, "Key not found: %s\n", key);
+  
+  pthread_rwlock_unlock(&kvs_table->tablelock);
+  return 1;
+}
+
+int disconnect(Client *client) {
+  // unsubscribe from all keys and free client
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 1;
+  }
+
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+
+  for (int i = 0; i < TABLE_SIZE; i++) {
+    KeyNode *keyNode = kvs_table->table[i];
+    while (keyNode != NULL) {
+      ClientNode *clientNode = keyNode->headClients;
+      ClientNode *prev = NULL;
+      while (clientNode != NULL) {
+        if (clientNode->client == client) {
+          if (prev == NULL) {
+            keyNode->headClients = clientNode->next;
+          } else {
+            prev->next = clientNode->next;
+          }
+          free(clientNode);
+          break;
+        }
+        prev = clientNode;
+        clientNode = clientNode->next;
+      }
+      keyNode = keyNode->next;
+    }
+  }
+
+  close(client->req_fd);
+  close(client->resp_fd);
+  close(client->notif_fd);
+
+  char message[2];
+  message[0] = OP_CODE_DISCONNECT;
+  message[1] = '0';
+  write_all(client->resp_fd, message, 2);
+  free(client);
+  return 0;
+}
+

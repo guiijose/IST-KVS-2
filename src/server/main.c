@@ -52,21 +52,41 @@ void* request_thread_function(void* arg) {
   case OP_CODE_SUBSCRIBE:
     /* code */
     strncpy(key, message + 1, 41);
-    if (subscribe(client, key) == 1) {
+    if (subscribe(client, key) != 0) {
       fprintf(stderr, "Failed to subscribe to key: %s\n", key);
     }
     break;
   
   case OP_CODE_UNSUBSCRIBE:
     /* code */
+
+    if (unsubscribe(client, key) != 0) {
+      fprintf(stderr, "Failed to unsubscribe to key: %s\n", key);
+    }
+
     break;
   
   case OP_CODE_DISCONNECT:
     /* code */
+
+    // Remove client from array of clients
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+      if (clients[i] == client) {
+        clients[i] = NULL;
+        break;
+      }
+    }
+
+    if (disconnect(client) != 0) {
+      fprintf(stderr, "Failed to disconnect client\n");
+    }
+
+    pthread_exit(NULL);
+    fprintf(stdout, "Pthread exit not executed\n");
     break;
 
   default:
-    fprintf(stderr, "Unknown request from from client: %c\n", message[0]);
+    fprintf(stderr, "Unknown request from client: '%c'\n", message[0]);
     break;
   }
   return NULL;
@@ -282,15 +302,38 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     fprintf(stderr, "Failed to allocate memory for client\n");
     return 0;
   }
-
-  client->id = req_pipe_path[strlen(req_pipe_path) - 1];
-  fprintf(stdout, "Client connected with id: %d\n", client->id);
-  client->req_fd = open(req_pipe_path, O_RDONLY);
+  
   client->resp_fd = open(resp_pipe_path, O_WRONLY);
+  if (client->resp_fd == -1) {
+    sleep(2);
+    fprintf(stderr, "Failed to open response FIFO: %s\n", resp_pipe_path);
+    perror("open");
+    close(client->req_fd);
+    free(client);
+    return 1;
+  }
+
+
+  client->req_fd = open(req_pipe_path, O_RDONLY);
+  if (client->req_fd == -1) {
+    perror("open");
+    fprintf(stderr, "Failed to open request FIFO: '%s'\n", req_pipe_path);
+    free(client);
+    return 1;
+  }
+  
   client->notif_fd = open(notif_pipe_path, O_WRONLY);
+  if (client->notif_fd == -1) {
+    fprintf(stderr, "Failed to open notification FIFO: %s\n", notif_pipe_path);
+    close(client->req_fd);
+    close(client->resp_fd);
+    free(client);
+    return 1;
+  }
+  
 
   pthread_t* request_thread = malloc(sizeof(pthread_t));
-  if (pthread_create(request_thread, NULL, request_thread_function, (void*)&client) != 0) {
+  if (pthread_create(request_thread, NULL, request_thread_function, (void*)client) != 0) {
     fprintf(stderr, "Failed to create request thread\n");
     return 1;
   }
@@ -302,13 +345,6 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     }
   }
   
-  // Processes the message and returns 1 if while should break
-  int resp_fd = open(resp_pipe_path, O_WRONLY);
-
-  if (resp_fd == -1) {
-    fprintf(stderr, "Failed to open response FIFO\n");
-    return 0;
-  }
 
   // Concatenate the message and send it to the client
 
@@ -316,11 +352,13 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
   connect_message[0] = OP_CODE_CONNECT;
   connect_message[1] = '0';
 
-  if (write_all(resp_fd, connect_message, 2) == -1) {
+  //fprintf(stdout, "Sending connect message to client\n");
+  if (write_all(client->resp_fd, connect_message, 2) == -1) {
     fprintf(stderr, "Failed to write to response FIFO\n");
     return 1;
   }
-  close(resp_fd);
+
+  fprintf(stdout, "Process message finished\n");
   return 0;
 }
 
@@ -351,24 +389,25 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
   }
-
+  int counter = 0;
   while (1) {
     // Read from the register FIFO
+    fprintf(stdout, "process_message: %d\n", ++counter);
     char response[121];
     read_all(fd, response, 121, NULL);
     if (response[0] != OP_CODE_CONNECT) {
       continue;
     }
-
-    process_message(response, response + 41, response + 81);
+    fprintf(stdout, "process_message: %s\n", response);
+    process_message(response + 1, response + 41, response + 81);
   }
 
-  close(fd); // Close the register FIFO
+
 
   pthread_t* request_thread = malloc(sizeof(pthread_t));
   
 
-  if (register_thread == NULL) {
+  if (request_thread == NULL) {
     fprintf(stderr, "Failed to allocate memory for register thread\n");
     return;
   }

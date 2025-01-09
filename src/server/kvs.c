@@ -2,7 +2,9 @@
 #include "string.h"
 #include <ctype.h>
 
+#include <stdio.h>
 #include <stdlib.h>
+#include "../common/io.h"
 
 // Hash function based on key initial.
 // @param key Lowercase alphabetical string.
@@ -40,6 +42,13 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
             // overwrite value
             free(keyNode->value);
             keyNode->value = strdup(value);
+            char message[82];
+            memset(message, 0, 82);
+            strcpy(message, keyNode->key);
+            strcpy(message + 41, keyNode->value);
+            if (notify_clients(keyNode, message) != 0) {
+                return 1;
+            }
             return 0;
         }
         previousNode = keyNode;
@@ -116,4 +125,14 @@ void free_table(HashTable *ht) {
     }
     pthread_rwlock_destroy(&ht->tablelock);
     free(ht);
+}
+
+int notify_clients(KeyNode* keyNode, char *message) {
+    fprintf(stdout, "Notifying clients\n");
+    ClientNode *clientNode = keyNode->headClients;
+    while (clientNode != NULL) {
+    write_all(clientNode->client->notif_fd, message, strlen(message));
+    clientNode = clientNode->next;
+    }
+    return 0;
 }
