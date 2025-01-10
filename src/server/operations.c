@@ -274,6 +274,7 @@ int unsubscribe(Client* client, const char* key) {
 }
 
 int disconnect(Client *client) {
+  fprintf(stdout, "going to disconnect\n");
   // unsubscribe from all keys and free client
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
@@ -304,15 +305,18 @@ int disconnect(Client *client) {
     }
   }
 
-  close(client->req_fd);
-  close(client->resp_fd);
-  close(client->notif_fd);
+  pthread_rwlock_unlock(&kvs_table->tablelock);
+
 
   char message[2];
   message[0] = OP_CODE_DISCONNECT;
   message[1] = '0';
   write_all(client->resp_fd, message, 2);
+  close(client->req_fd);
+  close(client->resp_fd);
+  close(client->notif_fd);
   free(client);
+  fprintf(stdout, "going to return 0 from disconnect\n");
   return 0;
 }
 

@@ -45,13 +45,13 @@ void* request_thread_function(void* arg) {
   int fd = client->req_fd;
   // Add your function logic here
   char message[42];
-  read_all(fd, message, 42, NULL);
+  read_all(fd, message, 1, NULL);
   char key[41];
   switch (message[0])
   {
   case OP_CODE_SUBSCRIBE:
     /* code */
-    strncpy(key, message + 1, 41);
+    read_all(fd, key, 41, NULL);
     if (subscribe(client, key) != 0) {
       fprintf(stderr, "Failed to subscribe to key: %s\n", key);
     }
@@ -59,7 +59,7 @@ void* request_thread_function(void* arg) {
   
   case OP_CODE_UNSUBSCRIBE:
     /* code */
-
+    read_all(fd, key, 41, NULL);
     if (unsubscribe(client, key) != 0) {
       fprintf(stderr, "Failed to unsubscribe to key: %s\n", key);
     }
@@ -68,7 +68,7 @@ void* request_thread_function(void* arg) {
   
   case OP_CODE_DISCONNECT:
     /* code */
-
+    fprintf(stdout, "case op_code disconnect\n");
     // Remove client from array of clients
     for (int i = 0; i < MAX_SESSION_COUNT; i++) {
       if (clients[i] == client) {
@@ -80,13 +80,14 @@ void* request_thread_function(void* arg) {
     if (disconnect(client) != 0) {
       fprintf(stderr, "Failed to disconnect client\n");
     }
-
+    fprintf(stdout, "going to execute pthread exit\n");
     pthread_exit(NULL);
     fprintf(stdout, "Pthread exit not executed\n");
     break;
 
   default:
     fprintf(stderr, "Unknown request from client: '%c'\n", message[0]);
+
     break;
   }
   return NULL;
@@ -305,7 +306,6 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
   
   client->resp_fd = open(resp_pipe_path, O_WRONLY);
   if (client->resp_fd == -1) {
-    sleep(2);
     fprintf(stderr, "Failed to open response FIFO: %s\n", resp_pipe_path);
     perror("open");
     close(client->req_fd);
@@ -338,12 +338,6 @@ int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_
     return 1;
   }
 
-  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-    if (clients[i] == NULL) {
-      clients[i] = client;
-      break;
-    }
-  }
   
 
   // Concatenate the message and send it to the client
@@ -384,7 +378,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   // ler do FIFO de registo
-  int fd = open(fifo_registo, O_RDONLY);
+  int fd = open(fifo_registo, O_RDWR);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
@@ -400,6 +394,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
     }
     fprintf(stdout, "process_message: %s\n", response);
     process_message(response + 1, response + 41, response + 81);
+
   }
 
 

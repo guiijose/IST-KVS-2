@@ -82,29 +82,47 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
 }
  
 int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path,  int *fds) {
-  // close pipes and unlink pipe files
-  
-  for (int i = 1; i < 4; i++) {
-    if (close(fds[i]) == -1) {
-      perror("Failed to close pipe");
+  char message = OP_CODE_DISCONNECT;
+  write_all(fds[2], &message, 1);
+  fprintf(stdout, "Sent disconnect message to server\n");
+  char response[2];
+  read_all(fds[1], response, 2, NULL);
+  fprintf(stdout, "got response from disconnect\n");
+  if (response[0] == OP_CODE_DISCONNECT) {
+
+    fprintf(stdout, "Server returned %c for operation: disconnect\n", response[1]);
+
+    // close pipes and unlink pipe files
+    for (int i = 0; i < 4; i++) {
+      if (close(fds[i]) == -1) {
+        fprintf(stderr, "fds[%d]: %d\n", i, fds[i]);
+        perror("Failed to close pipe");
+        return 1;
+      }
+    }
+
+
+
+    if (unlink(req_pipe_path) == -1) {
+      perror("Failed to unlink request pipe");
       return 1;
     }
+
+    if (unlink(resp_pipe_path) == -1) {
+      perror("Failed to unlink response pipe");
+      return 1;
+    }
+
+    if (unlink(notifications_pipe_path) == -1) {
+      perror("Failed to unlink notifications pipe");
+      return 1;
+    }
+    return (response[1] == '0') ? 0 : 1;
+  } else {
+    fprintf(stderr, "Unknown response from server: %c\n", response[0]);
   }
 
-  if (unlink(req_pipe_path) == -1) {
-    perror("Failed to unlink request pipe");
-    return 1;
-  }
 
-  if (unlink(resp_pipe_path) == -1) {
-    perror("Failed to unlink response pipe");
-    return 1;
-  }
-
-  if (unlink(notifications_pipe_path) == -1) {
-    perror("Failed to unlink notifications pipe");
-    return 1;
-  }
 
   return 0;
 }

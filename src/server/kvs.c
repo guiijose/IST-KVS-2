@@ -128,11 +128,12 @@ void free_table(HashTable *ht) {
 }
 
 int notify_clients(KeyNode* keyNode, char *message) {
-    fprintf(stdout, "Notifying clients\n");
     ClientNode *clientNode = keyNode->headClients;
     while (clientNode != NULL) {
-    write_all(clientNode->client->notif_fd, message, strlen(message));
-    clientNode = clientNode->next;
+        write_all(clientNode->client->notif_fd, message, strlen(message));
+        fprintf(stdout, "Key: %s\n", keyNode->key);
+        fprintf(stdout, "Value: %s\n", keyNode->value);
+        clientNode = clientNode->next;
     }
     return 0;
 }
