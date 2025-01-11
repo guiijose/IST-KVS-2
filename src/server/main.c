@@ -38,59 +38,142 @@ size_t max_threads;            // Maximum allowed simultaneous threads
 char* jobs_directory = NULL;
 
 
-sem_t clients_connected_sem;
+pthread_mutex_t consumer_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void* request_thread_function(void* arg) {
-  Client* client = (Client*)arg;
+Client* connect_queue[MAX_SESSION_COUNT];
+
+pthread_t consumer_threads[MAX_SESSION_COUNT];
+
+int request_thread_function(Client* client) {
+
   int fd = client->req_fd;
   // Add your function logic here
-  char message[42];
-  read_all(fd, message, 1, NULL);
-  char key[41];
-  switch (message[0])
-  {
-  case OP_CODE_SUBSCRIBE:
-    /* code */
-    read_all(fd, key, 41, NULL);
-    if (subscribe(client, key) != 0) {
-      fprintf(stderr, "Failed to subscribe to key: %s\n", key);
-    }
-    break;
   
-  case OP_CODE_UNSUBSCRIBE:
-    /* code */
-    read_all(fd, key, 41, NULL);
-    if (unsubscribe(client, key) != 0) {
-      fprintf(stderr, "Failed to unsubscribe to key: %s\n", key);
-    }
-
-    break;
-  
-  case OP_CODE_DISCONNECT:
-    /* code */
-    fprintf(stdout, "case op_code disconnect\n");
-    // Remove client from array of clients
-    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-      if (clients[i] == client) {
-        clients[i] = NULL;
+  while (1) {
+    char message[42];
+    read_all(fd, message, 1, NULL);
+    char key[41];
+    switch (message[0]) {
+      case OP_CODE_SUBSCRIBE:
+        /* code */
+        read_all(fd, key, 41, NULL);
+        if (subscribe(client, key) != 0) {
+          fprintf(stderr, "Failed to subscribe to key: %s\n", key);
+        }
         break;
-      }
+      
+      case OP_CODE_UNSUBSCRIBE:
+        /* code */
+        read_all(fd, key, 41, NULL);
+        if (unsubscribe(client, key) != 0) {
+          fprintf(stderr, "Failed to unsubscribe to key: %s\n", key);
+        }
+
+        break;
+      
+      case OP_CODE_DISCONNECT:
+        /* code */
+        // Remove client from array of clients
+        for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+          if (clients[i] == client) {
+            clients[i] = NULL;
+            break;
+          }
+        }
+
+        if (disconnect(client) != 0) {
+          fprintf(stderr, "Failed to disconnect client\n");
+        }
+        return 0;
+        break;
+
+      default:
+        fprintf(stderr, "Unknown request from client: '%c'\n", message[0]);
+
+        break;
     }
-
-    if (disconnect(client) != 0) {
-      fprintf(stderr, "Failed to disconnect client\n");
-    }
-    fprintf(stdout, "going to execute pthread exit\n");
-    pthread_exit(NULL);
-    fprintf(stdout, "Pthread exit not executed\n");
-    break;
-
-  default:
-    fprintf(stderr, "Unknown request from client: '%c'\n", message[0]);
-
-    break;
   }
-  return NULL;
+  
+}
+
+int process_message(Client* client) {
+  char* req_pipe_path = client->req_pipe_path;
+  char* resp_pipe_path = client->resp_pipe_path;
+  char* notif_pipe_path = client->notif_pipe_path;
+
+  if (client == NULL) {
+    fprintf(stderr, "Failed to allocate memory for client\n");
+    return 0;
+  }
+  
+  client->resp_fd = open(resp_pipe_path, O_WRONLY);
+  if (client->resp_fd == -1) {
+    fprintf(stderr, "Failed to open response FIFO: %s\n", resp_pipe_path);
+    perror("open");
+    close(client->req_fd);
+    free(client);
+    return 1;
+  }
+
+
+  client->req_fd = open(req_pipe_path, O_RDONLY);
+  if (client->req_fd == -1) {
+    perror("open");
+    fprintf(stderr, "Failed to open request FIFO: '%s'\n", req_pipe_path);
+    free(client);
+    return 1;
+  }
+  
+  client->notif_fd = open(notif_pipe_path, O_WRONLY);
+  if (client->notif_fd == -1) {
+    fprintf(stderr, "Failed to open notification FIFO: %s\n", notif_pipe_path);
+    close(client->req_fd);
+    close(client->resp_fd);
+    free(client);
+    return 1;
+  }
+
+  // Concatenate the message and send it to the client
+
+  char connect_message[2];
+  connect_message[0] = OP_CODE_CONNECT;
+  connect_message[1] = '0';
+
+  if (write_all(client->resp_fd, connect_message, 2) == -1) {
+    fprintf(stderr, "Failed to write to response FIFO\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+void* consumer_thread(void* arg) {
+  // Ignore the argument to avoid warnings when compiling
+  (void)arg;
+
+  while (1) {
+    pthread_mutex_lock(&consumer_lock);
+    Client* client = connect_queue[0];
+
+    if (client == NULL) {
+      pthread_mutex_unlock(&consumer_lock);
+      continue;
+    }
+
+    for (int i = 0; i < MAX_SESSION_COUNT - 1; i++) {
+      connect_queue[i] = connect_queue[i + 1];
+    }
+    connect_queue[MAX_SESSION_COUNT - 1] = NULL;
+
+    pthread_mutex_unlock(&consumer_lock);
+
+    process_message(client);
+
+    if (request_thread_function(client) != 0) {
+      fprintf(stderr, "Failed to process request\n");
+    }
+
+  }
 }
 
 int filter_job_files(const struct dirent* entry) {
@@ -296,65 +379,6 @@ static void* get_file(void* arguments) {
   pthread_exit(NULL);
 }
 
-int process_message(char* req_pipe_path, char* resp_pipe_path, char* notif_pipe_path) {
-  Client* client = malloc(sizeof(Client));
-
-  if (client == NULL) {
-    fprintf(stderr, "Failed to allocate memory for client\n");
-    return 0;
-  }
-  
-  client->resp_fd = open(resp_pipe_path, O_WRONLY);
-  if (client->resp_fd == -1) {
-    fprintf(stderr, "Failed to open response FIFO: %s\n", resp_pipe_path);
-    perror("open");
-    close(client->req_fd);
-    free(client);
-    return 1;
-  }
-
-
-  client->req_fd = open(req_pipe_path, O_RDONLY);
-  if (client->req_fd == -1) {
-    perror("open");
-    fprintf(stderr, "Failed to open request FIFO: '%s'\n", req_pipe_path);
-    free(client);
-    return 1;
-  }
-  
-  client->notif_fd = open(notif_pipe_path, O_WRONLY);
-  if (client->notif_fd == -1) {
-    fprintf(stderr, "Failed to open notification FIFO: %s\n", notif_pipe_path);
-    close(client->req_fd);
-    close(client->resp_fd);
-    free(client);
-    return 1;
-  }
-  
-
-  pthread_t* request_thread = malloc(sizeof(pthread_t));
-  if (pthread_create(request_thread, NULL, request_thread_function, (void*)client) != 0) {
-    fprintf(stderr, "Failed to create request thread\n");
-    return 1;
-  }
-
-  
-
-  // Concatenate the message and send it to the client
-
-  char connect_message[2];
-  connect_message[0] = OP_CODE_CONNECT;
-  connect_message[1] = '0';
-
-  //fprintf(stdout, "Sending connect message to client\n");
-  if (write_all(client->resp_fd, connect_message, 2) == -1) {
-    fprintf(stderr, "Failed to write to response FIFO\n");
-    return 1;
-  }
-
-  fprintf(stdout, "Process message finished\n");
-  return 0;
-}
 
 
 static void dispatch_threads(DIR* dir, char* fifo_registo) {
@@ -377,23 +401,51 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
     }
   }
 
+  // Create consumer threads to initialize client sessions
+  for (size_t i = 0; i < MAX_SESSION_COUNT; i++) {
+    if (pthread_create(&consumer_threads[i], NULL, consumer_thread, NULL) != 0) {
+      fprintf(stderr, "Failed to create consumer thread %zu\n", i);
+      free(threads);
+      return;
+    }
+  }
+
   // ler do FIFO de registo
   int fd = open(fifo_registo, O_RDWR);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
   }
-  int counter = 0;
+
   while (1) {
     // Read from the register FIFO
-    fprintf(stdout, "process_message: %d\n", ++counter);
     char response[121];
     read_all(fd, response, 121, NULL);
     if (response[0] != OP_CODE_CONNECT) {
       continue;
     }
-    fprintf(stdout, "process_message: %s\n", response);
-    process_message(response + 1, response + 41, response + 81);
+    
+    Client* client = malloc(sizeof(Client));
+    if (client == NULL) {
+      fprintf(stderr, "Failed to allocate memory for client\n");
+      continue;
+    }
+
+    strn_memcpy(client->req_pipe_path, response + 1, MAX_PIPE_PATH_LENGTH);
+    strn_memcpy(client->resp_pipe_path, response + 41, MAX_PIPE_PATH_LENGTH);
+    strn_memcpy(client->notif_pipe_path, response + 81, MAX_PIPE_PATH_LENGTH);
+
+    // Add client to the queue
+    pthread_mutex_lock(&consumer_lock);
+
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+      if (connect_queue[i] == NULL) {
+        connect_queue[i] = client;
+        break;
+      }
+    }
+
+    pthread_mutex_unlock(&consumer_lock);
 
   }
 
@@ -464,9 +516,6 @@ int main(int argc, char** argv) {
 	}
 
   char *fifo_registo = argv[4];
-
-  sem_init(&register_fifo_sem, 0, 1);
-  sem_init(&clients_connected_sem, 0, MAX_SESSION_COUNT);
 
   /* remove pipe if it exists */
   if (unlink(fifo_registo) != 0 && errno != ENOENT) {

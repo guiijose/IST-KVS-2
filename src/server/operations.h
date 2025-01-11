@@ -10,6 +10,9 @@ typedef struct Client {
     int req_fd;
     int resp_fd;
     int notif_fd;
+    char req_pipe_path[MAX_STRING_SIZE];
+    char resp_pipe_path[MAX_STRING_SIZE];
+    char notif_pipe_path[MAX_STRING_SIZE];
 } Client;
 
 Client* clients[MAX_SESSION_COUNT];

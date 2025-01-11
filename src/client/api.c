@@ -55,7 +55,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     return 1;
   }
 
-  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
+  int notifications_fd = open(notifications_pipe_path, O_RDWR);
 
   if (notifications_fd == -1) {
     fprintf(stderr, "Failed to open notifications pipe\n");
