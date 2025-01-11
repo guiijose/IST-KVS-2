@@ -98,6 +98,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
 
   int aux = 0;
   for (size_t i = 0; i < num_pairs; i++) {
+    if (delete_pair(kvs_table, keys[i]) != 0) {
       if (!aux) {
         write_str(fd, "[");
         aux = 1;
@@ -105,6 +106,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
       char str[MAX_STRING_SIZE];
       snprintf(str, MAX_STRING_SIZE, "(%s,KVSMISSING)", keys[i]);
       write_str(fd, str);
+    }
   }
   if (aux) {
     write_str(fd, "]\n");
@@ -181,52 +183,49 @@ void kvs_wait(unsigned int delay_ms) {
 }
 
 int subscribe(Client* client, const char* key) {
-  char message[2];
-  message[0] = OP_CODE_SUBSCRIBE;
-  if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
-  }
-
-  pthread_rwlock_wrlock(&kvs_table->tablelock);
-  
-  int index = hash(key);
-  KeyNode *keyNode = kvs_table->table[index];
-
-  while (keyNode != NULL) {
-    if (strcmp(keyNode->key, key) == 0) {
-      ClientNode *clientNode = malloc(sizeof(ClientNode));
-      if (clientNode == NULL) {
-        fprintf(stderr, "Failed to allocate memory for client node\n");
-        pthread_rwlock_unlock(&kvs_table->tablelock);
-        message[1] = '1'; 
-        write_all(client->notif_fd, message, 2);
+    char message[2];
+    message[0] = OP_CODE_SUBSCRIBE;
+    if (kvs_table == NULL) {
+        fprintf(stderr, "KVS state must be initialized\n");
         return 1;
-      }
-
-      while (1) {
-        if (clientNode->client == NULL) {
-          clientNode->client = client;
-          clientNode->next = keyNode->headClients;
-          keyNode->headClients = clientNode;
-          pthread_rwlock_unlock(&kvs_table->tablelock);
-          message[1] = '0';
-          write_all(client->resp_fd, message, 2);
-          return 0;
-        } 
-        else {
-          clientNode = clientNode->next;
-        }
-      }
     }
-    keyNode = keyNode->next;
-  }
-  message[1] = '1';
-  write_all(client->resp_fd, message, 2);
-  fprintf(stderr, "Key not found: %s\n", key);
-  
-  pthread_rwlock_unlock(&kvs_table->tablelock);
-  return 1;
+
+    pthread_rwlock_wrlock(&kvs_table->tablelock);
+    
+    int index = hash(key);
+    KeyNode *keyNode = kvs_table->table[index];
+
+    while (keyNode != NULL) {
+        if (strcmp(keyNode->key, key) == 0) {
+            // Create and initialize the new client node
+            ClientNode *clientNode = malloc(sizeof(ClientNode));
+            if (clientNode == NULL) {
+                fprintf(stderr, "Failed to allocate memory for client node\n");
+                pthread_rwlock_unlock(&kvs_table->tablelock);
+                message[1] = '1'; 
+                write_all(client->notif_fd, message, 2);
+                return 1;
+            }
+
+            // Initialize the new node
+            clientNode->client = client;
+            clientNode->next = keyNode->headClients;
+            keyNode->headClients = clientNode;
+            
+            pthread_rwlock_unlock(&kvs_table->tablelock);
+            message[1] = '0';
+            write_all(client->resp_fd, message, 2);
+            return 0;
+        }
+        keyNode = keyNode->next;
+    }
+
+    message[1] = '1';
+    write_all(client->resp_fd, message, 2);
+    fprintf(stderr, "Key not found: %s\n", key);
+    
+    pthread_rwlock_unlock(&kvs_table->tablelock);
+    return 1;
 }
 
 int unsubscribe(Client* client, const char* key) {

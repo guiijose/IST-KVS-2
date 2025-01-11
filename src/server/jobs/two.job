@@ -7,4 +7,5 @@ WRITE [(i,ignacio)(j,joana)]
 WRITE [(k,katia)(l,leonel)]
 WAIT 20000
 WRITE [(k,valor_mudado_k)(l,valor_mudado_l)]
+DELETE [k]
 BACKUP

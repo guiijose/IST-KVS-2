@@ -99,6 +99,14 @@ int delete_pair(HashTable *ht, const char *key) {
                 // Node to delete is not the first; bypass it
                 prevNode->next = keyNode->next; // Link the previous node to the next node
             }
+            char message[82];
+            memset(message, 0, 82);
+            strcpy(message, keyNode->key);
+            strcpy(message + 41, "DELETED");
+            if (notify_clients(keyNode, message) != 0) {
+                return 1;
+            }
+
             // Free the memory allocated for the key and value
             free(keyNode->key);
             free(keyNode->value);
