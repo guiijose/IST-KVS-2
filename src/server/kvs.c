@@ -131,8 +131,6 @@ int notify_clients(KeyNode* keyNode, char *message) {
     ClientNode *clientNode = keyNode->headClients;
     while (clientNode != NULL) {
         write_all(clientNode->client->notif_fd, message, 82);
-        fprintf(stdout, "Key: %s\n", keyNode->key);
-        fprintf(stdout, "Value: %s\n", keyNode->value);
         clientNode = clientNode->next;
     }
     return 0;

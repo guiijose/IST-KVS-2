@@ -84,10 +84,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
 int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path,  int *fds) {
   char message = OP_CODE_DISCONNECT;
   write_all(fds[2], &message, 1);
-  fprintf(stdout, "Sent disconnect message to server\n");
   char response[2];
   read_all(fds[1], response, 2, NULL);
-  fprintf(stdout, "got response from disconnect\n");
   if (response[0] == OP_CODE_DISCONNECT) {
 
     fprintf(stdout, "Server returned %c for operation: disconnect\n", response[1]);

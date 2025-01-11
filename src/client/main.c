@@ -26,7 +26,6 @@ void *notifications_thread_function(void *arg) {
 
     pthread_mutex_lock(&lock);
     fprintf(stdout, "Key: %s, value: %s\n", message, message + 41);
-    printf("\n");
     pthread_mutex_unlock(&lock);
   }
 
