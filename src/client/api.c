@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <semaphore.h>
 #include "../common/protocol.h"
@@ -55,7 +56,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     return 1;
   }
 
-  int notifications_fd = open(notifications_pipe_path, O_RDWR);
+  int notifications_fd = open(notifications_pipe_path, O_RDONLY);
 
   if (notifications_fd == -1) {
     fprintf(stderr, "Failed to open notifications pipe\n");
@@ -71,6 +72,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     read_all(response_fd, resp_message, 2, NULL);
     if (resp_message[0] == OP_CODE_CONNECT) {
       fprintf(stdout, "Server returned %c for operation: connect\n", resp_message[1]);
+      close(fifo_fd);
       return (resp_message[1] == '0') ? 0 : 1;
     } else {
       fprintf(stderr, "Unknown response from server: %c\n", resp_message[0]);
@@ -98,8 +100,6 @@ int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char c
         return 1;
       }
     }
-
-
 
     if (unlink(req_pipe_path) == -1) {
       perror("Failed to unlink request pipe");
@@ -131,32 +131,44 @@ int kvs_subscribe(const char* key, const int req_fd, const int resp_fd) {
   memset(message, 0, 42);
   message[0] = OP_CODE_SUBSCRIBE;
   strcpy(message + 1, key);
-  write_all(req_fd, message, 42);
-
-  while (1) {
-    char response[2];
-    read_all(resp_fd, response, 2, NULL);
-    if (response[0] == OP_CODE_SUBSCRIBE) {
-      fprintf(stdout, "Server returned %c for operation: subscribe\n", response[1]);
-      return (response[1] == '0') ? 0 : 1;
-    } else {
-      fprintf(stderr, "Unknown response from server: %c\n", response[0]);
-    }
+  if (write_all(req_fd, message, 42) == -1) {
+    fprintf(stderr, "Failed to write to request pipe\n");
+    exit(1);
   }
+
+  fprintf(stdout, "Before while\n");
+
+  char response[2];
+  int result = read_all(resp_fd, response, 2, NULL);
+  if (result == -1) {
+    fprintf(stderr, "Failed to read from response pipe\n");
+    return 1;
+  } else if (result == 0) {
+    fprintf(stderr, "Disconnected from server\n");
+    exit(1);
+  }
+  if (response[0] == OP_CODE_SUBSCRIBE) {
+    fprintf(stdout, "Server returned %c for operation: subscribe\n", response[1]);
+    return (response[1] == '0') ? 0 : 1;
+  } else {
+    fprintf(stderr, "Unknown response from server: %c\n", response[0]);
+  }
+  return 0;
+
 }
 
 int kvs_unsubscribe(const char* key, const int req_fd, const int resp_fd) {
     // send unsubscribe message to request pipe and wait for response in response pipe
   char message[42];
   memset(message, 0, 42);
-  message[0] = OP_CODE_SUBSCRIBE;
+  message[0] = OP_CODE_UNSUBSCRIBE;
   strcpy(message + 1, key);
   write_all(req_fd, message, 42);
 
   while (1) {
     char response[2];
     read_all(resp_fd, response, 2, NULL);
-    if (response[0] == OP_CODE_SUBSCRIBE) {
+    if (response[0] == OP_CODE_UNSUBSCRIBE) {
       fprintf(stdout, "Server returned %c for operation: unsubscribe\n", response[1]);
       return (response[1] == '0') ? 0 : 1;
     } else {

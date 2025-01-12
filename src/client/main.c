@@ -22,8 +22,14 @@ void *notifications_thread_function(void *arg) {
 
   while (1) {
     char message[82];
-    read_all(*notifications_fd, message, 82, NULL);
-
+    int result = read_all(*notifications_fd, message, 82, NULL);
+    if (result == 0) {
+      exit(0);
+      return NULL;
+    } else if (result == -1) {
+      fprintf(stderr, "Failed to read from notifications FIFO\n");
+      exit(1);
+    }
     pthread_mutex_lock(&lock); 
     fprintf(stdout, "(%s,%s)\n", message, message + 41);
     pthread_mutex_unlock(&lock);
@@ -102,7 +108,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-         
+        
         if (kvs_unsubscribe(keys[0], fds[2], fds[1])) {
             fprintf(stderr, "Command subscribe failed\n");
         }

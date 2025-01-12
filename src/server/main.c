@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdio.h>
+#include <pthread.h>
+#include <signal.h>
 
 #include "constants.h"
 #include "parser.h"
@@ -45,18 +47,62 @@ Client* connect_queue[MAX_SESSION_COUNT];
 pthread_t consumer_threads[MAX_SESSION_COUNT];
 sem_t register_fifo_sem;
 
+sig_atomic_t received_sigusr1 = 0;
+
+void sigusr1_handler(int signum) {
+    if (signum != SIGUSR1) {
+        return;
+    }
+    fprintf(stdout, "Received SIGUSR1\n");
+    received_sigusr1 = 1;
+    
+}
+
+void close_all_clients() {
+    fprintf(stdout, "Closing all clients\n");
+    pthread_mutex_lock(&consumer_lock);
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (clients[i] != NULL) {
+            close(clients[i]->req_fd);
+            close(clients[i]->resp_fd);
+            close(clients[i]->notif_fd);
+        }
+    }
+    pthread_mutex_unlock(&consumer_lock);
+}
+
 int request_thread_function(Client* client) {
   int fd = client->req_fd;
   // Add your function logic here
-  
   while (1) {
     char message[42];
-    read_all(fd, message, 1, NULL);
+    int result = read_all(fd, message, 1, NULL);
+    if (result == 0) {
+      if (disconnect(client) != 0) {
+        fprintf(stderr, "Failed to disconnect client\n");
+        return 1;
+      }
+      return 0;
+    } else if (result == -1) {
+      fprintf(stderr, "Failed to read from request FIFO\n");
+      return 1;
+    }
     char key[41];
     switch (message[0]) {
       case OP_CODE_SUBSCRIBE:
         /* code */
-        read_all(fd, key, 41, NULL);
+        result = read_all(fd, key, 41, NULL);
+        if (result == 0) {
+          if (disconnect(client) != 0) {
+            fprintf(stderr, "Failed to disconnect client\n");
+            return 1;
+          }
+          return 0;
+        } else if (result == -1) {
+          fprintf(stderr, "Failed to read from request FIFO\n");
+          return 1;
+        }
+        
         if (subscribe(client, key) != 0) {
           fprintf(stderr, "Failed to subscribe to key: %s\n", key);
         }
@@ -64,7 +110,17 @@ int request_thread_function(Client* client) {
       
       case OP_CODE_UNSUBSCRIBE:
         /* code */
-        read_all(fd, key, 41, NULL);
+        result = read_all(fd, key, 41, NULL);
+        if (result == 0) {
+          if (disconnect(client) != 0) {
+            fprintf(stderr, "Failed to disconnect client\n");
+            return 1;
+          }
+          return 0;
+        } else if (result == -1) {
+          fprintf(stderr, "Failed to read from request FIFO\n");
+          return 1;
+        }
         if (unsubscribe(client, key) != 0) {
           fprintf(stderr, "Failed to unsubscribe to key: %s\n", key);
         }
@@ -74,12 +130,14 @@ int request_thread_function(Client* client) {
       case OP_CODE_DISCONNECT:
         /* code */
         // Remove client from array of clients
+        pthread_mutex_lock(&consumer_lock);
         for (int i = 0; i < MAX_SESSION_COUNT; i++) {
           if (clients[i] == client) {
             clients[i] = NULL;
             break;
           }
         }
+        pthread_mutex_unlock(&consumer_lock);
 
         if (disconnect(client) != 0) {
           fprintf(stderr, "Failed to disconnect client\n");
@@ -151,6 +209,15 @@ void* consumer_thread(void* arg) {
   // Ignore the argument to avoid warnings when compiling
   (void)arg;
 
+  // Block SIGUSR1 in consumer threads
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
+    fprintf(stderr, "Failed to block SIGUSR1\n");
+    return NULL;
+  }
+
   while (1) {
     pthread_mutex_lock(&consumer_lock);
     Client* client = connect_queue[0];
@@ -165,6 +232,14 @@ void* consumer_thread(void* arg) {
     }
     connect_queue[MAX_SESSION_COUNT - 1] = NULL;
 
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+      if (clients[i] == NULL) {
+
+        clients[i] = client;
+        break;
+      }
+    }
+
     sem_post(&register_fifo_sem);
 
     pthread_mutex_unlock(&consumer_lock);
@@ -173,6 +248,7 @@ void* consumer_thread(void* arg) {
 
     if (request_thread_function(client) != 0) {
       fprintf(stderr, "Failed to process request\n");
+      
     }
 
   }
@@ -414,17 +490,35 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   // ler do FIFO de registo
-  int fd = open(fifo_registo, O_RDWR);
+  int fd = open(fifo_registo, O_RDONLY);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
     return;
   }
 
+  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+    clients[i] = NULL;
+    connect_queue[i] = NULL;
+  } 
+
   while (1) {
+    if (received_sigusr1) {
+      received_sigusr1 = 0;
+      close_all_clients();
+    }
     // Read from the register FIFO
-    sem_wait(&register_fifo_sem);
     char response[121];
-    read_all(fd, response, 121, NULL);
+    int result = read_all(fd, response, 121, NULL);
+    if (result == -1) {
+      fprintf(stderr, "Failed to read from register FIFO\n");
+      continue;
+    } else if (result == 0) {
+      sem_post(&register_fifo_sem);
+      continue;
+    }
+
+    sem_wait(&register_fifo_sem);
+
     if (response[0] != OP_CODE_CONNECT) {
       continue;
     }
@@ -544,6 +638,18 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  // Set up SIGUSR1 handler in main thread
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = sigusr1_handler;
+  sa.sa_flags = 0;
+
+  if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+      perror("sigaction");
+      return 1;
+  }
+
+  fprintf(stdout, "PID: %i\n", getpid());
   dispatch_threads(dir, fifo_registo);
 
   if (closedir(dir) == -1) {
