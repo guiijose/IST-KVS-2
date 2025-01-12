@@ -43,9 +43,9 @@ pthread_mutex_t consumer_lock = PTHREAD_MUTEX_INITIALIZER;
 Client* connect_queue[MAX_SESSION_COUNT];
 
 pthread_t consumer_threads[MAX_SESSION_COUNT];
+sem_t register_fifo_sem;
 
 int request_thread_function(Client* client) {
-
   int fd = client->req_fd;
   // Add your function logic here
   
@@ -164,6 +164,8 @@ void* consumer_thread(void* arg) {
       connect_queue[i] = connect_queue[i + 1];
     }
     connect_queue[MAX_SESSION_COUNT - 1] = NULL;
+
+    sem_post(&register_fifo_sem);
 
     pthread_mutex_unlock(&consumer_lock);
 
@@ -390,6 +392,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
   }
 
   struct SharedData thread_data = {dir, jobs_directory, PTHREAD_MUTEX_INITIALIZER};
+  sem_init(&register_fifo_sem, 0, MAX_SESSION_COUNT);
 
 
   for (size_t i = 0; i < max_threads; i++) {
@@ -419,6 +422,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
 
   while (1) {
     // Read from the register FIFO
+    sem_wait(&register_fifo_sem);
     char response[121];
     read_all(fd, response, 121, NULL);
     if (response[0] != OP_CODE_CONNECT) {
