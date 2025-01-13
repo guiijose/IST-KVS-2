@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
   int fds[4];
 
   // Connect to the server and fill array with file descriptors for request, response and notifications
-  if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2], fds) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2], fds) != 1) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
 
-        if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 0) {
+        if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 1) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
          
-        if (kvs_subscribe(keys[0],fds[2], fds[1])) {
+        if (kvs_subscribe(keys[0],fds[2], fds[1]) != 1) {
             fprintf(stderr, "Command subscribe failed\n");
         }
         break;
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
         
-        if (kvs_unsubscribe(keys[0], fds[2], fds[1])) {
+        if (kvs_unsubscribe(keys[0], fds[2], fds[1]) != 1) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 
