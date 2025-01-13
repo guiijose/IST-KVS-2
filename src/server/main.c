@@ -489,7 +489,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
     }
   }
 
-  // ler do FIFO de registo
+  // Open register pipe
   int fd = open(fifo_registo, O_RDONLY);
   if (fd == -1) {
     fprintf(stderr, "Failed to open register FIFO\n");
@@ -506,7 +506,7 @@ static void dispatch_threads(DIR* dir, char* fifo_registo) {
       received_sigusr1 = 0;
       close_all_clients();
     }
-    // Read from the register FIFO
+    // Read from the register pipe
     char response[121];
     int result = read_all(fd, response, 121, NULL);
     if (result == -1) {

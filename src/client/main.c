@@ -12,9 +12,6 @@
 #include "api.h"
 #include "../common/protocol.h"
 
-// Mutex lock to synchronize who writes/reads to stdout
-
-
 
 void *notifications_thread_function(void *arg) {
   int *notifications_fd = (int*)arg;
@@ -128,6 +125,10 @@ int main(int argc, char* argv[]) {
 
       case EOC:
         // input should end in a disconnect, or it will loop here forever
+        if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 1) {
+          fprintf(stderr, "Failed to disconnect to the server\n");
+          return 1;
+        }
         break;
     }
   }
