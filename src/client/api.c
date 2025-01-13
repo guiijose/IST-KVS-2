@@ -48,9 +48,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     return 1;
   }
 
-  //fprintf(stdout, "Request path: '%s'\n", req_pipe_path);
   int request_fd = open(req_pipe_path, O_WRONLY);
-  //fprintf(stdout, "Request fd: %d\n", request_fd);
+
   if (request_fd == -1) {
     fprintf(stderr, "Failed to open request pipe\n");
     return 1;
@@ -72,7 +71,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     read_all(response_fd, resp_message, 2, NULL);
     if (resp_message[0] == OP_CODE_CONNECT) {
       fprintf(stdout, "Server returned %c for operation: connect\n", resp_message[1]);
-      return (resp_message[1] == '0') ? 0 : 1;
+      return (resp_message[1] == '1') ? 0 : 1;
     } else {
       fprintf(stderr, "Unknown response from server: %c\n", resp_message[0]);
     }
@@ -106,11 +105,7 @@ int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char c
 
     // close pipes and unlink pipe files
     for (int i = 0; i < 4; i++) {
-      if (close(fds[i]) == -1) {
-        fprintf(stderr, "fds[%d]: %d\n", i, fds[i]);
-        perror("Failed to close pipe");
-        return 1;
-      }
+      close(fds[i]);
     }
 
     if (unlink(req_pipe_path) == -1) {
@@ -127,7 +122,7 @@ int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char c
       perror("Failed to unlink notifications pipe");
       return 1;
     }
-    return (response[1] == '0') ? 0 : 1;
+    return (response[1] == '1') ? 0 : 1;
   } else {
     fprintf(stderr, "Unknown response from server: %c\n", response[0]);
   }
@@ -194,7 +189,7 @@ int kvs_unsubscribe(const char* key, const int req_fd, const int resp_fd) {
 
     if (response[0] == OP_CODE_UNSUBSCRIBE) {
       fprintf(stdout, "Server returned %c for operation: unsubscribe\n", response[1]);
-      return (response[1] == '0') ? 0 : 1;
+      return (response[1] == '1') ? 0 : 1;
     } else {
       fprintf(stderr, "Unknown response from server: %c\n", response[0]);
     }

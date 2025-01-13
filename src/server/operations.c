@@ -254,7 +254,7 @@ int unsubscribe(Client* client, const char* key) {
           }
           free(clientNode);
           pthread_rwlock_unlock(&kvs_table->tablelock);
-          message[1] = '1';
+          message[1] = '0';
           write_all(client->resp_fd, message, 2);
           return 0;
         }
@@ -264,7 +264,7 @@ int unsubscribe(Client* client, const char* key) {
     }
     keyNode = keyNode->next;
   }
-  message[1] = '0';
+  message[1] = '1';
   write_all(client->resp_fd, message, 2);
   fprintf(stderr, "Key not found: %s\n", key);
   
@@ -308,8 +308,9 @@ int disconnect(Client *client) {
 
   char message[2];
   message[0] = OP_CODE_DISCONNECT;
-  message[1] = '1';
+  message[1] = '0';
   write_all(client->resp_fd, message, 2);
+
   close(client->req_fd);
   close(client->resp_fd);
   close(client->notif_fd);

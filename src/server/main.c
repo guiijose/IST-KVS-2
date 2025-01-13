@@ -195,7 +195,7 @@ int process_message(Client* client) {
 
   char connect_message[2];
   connect_message[0] = OP_CODE_CONNECT;
-  connect_message[1] = '1';
+  connect_message[1] = '0';
 
   if (write_all(client->resp_fd, connect_message, 2) == -1) {
     fprintf(stderr, "Failed to write to response FIFO\n");

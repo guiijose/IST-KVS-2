@@ -13,7 +13,6 @@
 #include "../common/protocol.h"
 
 // Mutex lock to synchronize who writes/reads to stdout
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 
@@ -24,16 +23,12 @@ void *notifications_thread_function(void *arg) {
     char message[82];
     int result = read_all(*notifications_fd, message, 82, NULL);
     if (result == 0) {
-      fprintf(stderr, "Disconnected from server\n");
-      exit(0);
       return NULL;
     } else if (result == -1) {
       fprintf(stderr, "Failed to read from notifications FIFO\n");
       exit(1);
     }
-    pthread_mutex_lock(&lock); 
     fprintf(stdout, "(%s,%s)\n", message, message + 41);
-    pthread_mutex_unlock(&lock);
   }
 
   return NULL;
@@ -74,14 +69,12 @@ int main(int argc, char* argv[]) {
 
   // Initialize and start the notifications thread
   pthread_t notifications_thread;
-  pthread_mutex_init(&lock, NULL);
   pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)&fds[3]);
 
   // Main loop to read from standard input and process commands
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
-
         if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 1) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
