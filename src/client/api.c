@@ -40,7 +40,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     fprintf(stderr, "Failed to write to FIFO\n");
     return 1;
   }
-
+  close(fifo_fd);
   // Open response FIFO to read server response
   int response_fd = open(resp_pipe_path, O_RDONLY);
   if (response_fd == -1) {
@@ -72,7 +72,6 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
     read_all(response_fd, resp_message, 2, NULL);
     if (resp_message[0] == OP_CODE_CONNECT) {
       fprintf(stdout, "Server returned %c for operation: connect\n", resp_message[1]);
-      close(fifo_fd);
       return (resp_message[1] == '0') ? 0 : 1;
     } else {
       fprintf(stderr, "Unknown response from server: %c\n", resp_message[0]);
@@ -135,8 +134,6 @@ int kvs_subscribe(const char* key, const int req_fd, const int resp_fd) {
     fprintf(stderr, "Failed to write to request pipe\n");
     exit(1);
   }
-
-  fprintf(stdout, "Before while\n");
 
   char response[2];
   int result = read_all(resp_fd, response, 2, NULL);
