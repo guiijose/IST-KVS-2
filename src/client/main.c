@@ -19,11 +19,12 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *notifications_thread_function(void *arg) {
   int *notifications_fd = (int*)arg;
-
+  // This thread will read from the notifications FIFO and print the messages to stdout
   while (1) {
     char message[82];
     int result = read_all(*notifications_fd, message, 82, NULL);
     if (result == 0) {
+      fprintf(stderr, "Disconnected from server\n");
       exit(0);
       return NULL;
     } else if (result == -1) {
@@ -57,37 +58,35 @@ int main(int argc, char* argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notifications_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes
-
+  // Create all pipes
   if (create_pipes(req_pipe_path, resp_pipe_path, notifications_pipe_path) != 0) {
     fprintf(stderr, "Failed to create pipes\n");
     return 1;
   }
 
-  //fprintf(stdout, "Pipes created\n");
-
-
   int fds[4];
 
-
-  //fprintf(stdout, "About to call connect to server\n");
+  // Connect to the server and fill array with file descriptors for request, response and notifications
   if (kvs_connect(req_pipe_path, resp_pipe_path, notifications_pipe_path, argv[2], fds) != 0) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
+
+  // Initialize and start the notifications thread
   pthread_t notifications_thread;
   pthread_mutex_init(&lock, NULL);
   pthread_create(&notifications_thread, NULL, notifications_thread_function, (void*)&fds[3]);
 
+  // Main loop to read from standard input and process commands
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
+
         if (kvs_disconnect(req_pipe_path, resp_pipe_path, notifications_pipe_path, fds) != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
-        // TODO: end notifications thread
-        printf("Disconnected from server\n");
+
         return 0;
 
       case CMD_SUBSCRIBE:
@@ -140,5 +139,4 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // pthread_join(notifications_thread, NULL);
 }

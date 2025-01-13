@@ -84,9 +84,22 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
  
 int kvs_disconnect(char const *req_pipe_path, char const *resp_pipe_path, char const *notifications_pipe_path,  int *fds) {
   char message = OP_CODE_DISCONNECT;
-  write_all(fds[2], &message, 1);
+  int result = write_all(fds[2], &message, 1);
+  if (result == -1) {
+    fprintf(stderr, "Failed to write to request pipe\n");
+    return 1;
+  }
+
   char response[2];
-  read_all(fds[1], response, 2, NULL);
+  result = read_all(fds[1], response, 2, NULL);
+
+  if (result == -1) {
+    fprintf(stderr, "Failed to read from response pipe\n");
+    return 1;
+  } else if (result == 0) {
+    fprintf(stderr, "Disconnected from server\n");
+    return 1;
+  }
   if (response[0] == OP_CODE_DISCONNECT) {
 
     fprintf(stdout, "Server returned %c for operation: disconnect\n", response[1]);
@@ -160,11 +173,25 @@ int kvs_unsubscribe(const char* key, const int req_fd, const int resp_fd) {
   memset(message, 0, 42);
   message[0] = OP_CODE_UNSUBSCRIBE;
   strcpy(message + 1, key);
-  write_all(req_fd, message, 42);
+
+  int result = write_all(req_fd, message, 42);
+  if (result == -1) {
+    fprintf(stderr, "Failed to write to request pipe\n");
+    return 1;
+  }
 
   while (1) {
     char response[2];
-    read_all(resp_fd, response, 2, NULL);
+    result = read_all(resp_fd, response, 2, NULL);
+
+    if (result == -1) {
+      fprintf(stderr, "Failed to read from response pipe\n");
+      return 1;
+    } else if (result == 0) {
+      fprintf(stderr, "Disconnected from server\n");
+      return 1;
+    }
+
     if (response[0] == OP_CODE_UNSUBSCRIBE) {
       fprintf(stdout, "Server returned %c for operation: unsubscribe\n", response[1]);
       return (response[1] == '0') ? 0 : 1;
