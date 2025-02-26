@@ -9,7 +9,6 @@
 #include "constants.h"
 #include "io.h"
 #include "kvs.h"
-#include "operations.h"
 #include "../common/io.h"
 #include "../common/protocol.h"
 
